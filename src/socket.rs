@@ -5,7 +5,7 @@ use mio::net::UdpSocket;
 use mio::{Events, Interest, Poll, Token};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::os::fd::{AsRawFd, RawFd};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 /// A polling UDP socket pool
@@ -16,9 +16,9 @@ pub struct SocketPool {
     /// Reusable event buffer
     events: Events,
     /// The sockets by their file descriptor
-    sockets: HashMap<RawFd, UdpSocket>,
+    sockets: HashMap<Token, UdpSocket>,
     /// The socket file descriptors by their local address
-    by_address: HashMap<SocketAddr, RawFd>,
+    by_address: HashMap<SocketAddr, Token>,
 }
 impl SocketPool {
     /// Creates a new socket pool
@@ -32,37 +32,38 @@ impl SocketPool {
 
     /// Creates and binds a new socket within the polling pool
     pub fn init(&mut self, bind_address: SocketAddr, interests: Interest) -> Result<&UdpSocket, Error> {
+        /// A shared, atomic counter to allocate unique tokens per socket
+        static TOKEN_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
         // Bind the UDP socket and use the file descriptor as token
-        let mut sockets = UdpSocket::bind(bind_address)?;
-        let address = sockets.local_addr()?;
-        let raw_fd = sockets.as_raw_fd();
+        let mut socket = UdpSocket::bind(bind_address)?;
+        let address = socket.local_addr()?;
 
         // Register the new socket for polling
-        let token = Token(raw_fd.try_into()?);
-        self.pollset.registry().register(&mut sockets, token, interests)?;
+        let token = Token(TOKEN_COUNTER.fetch_add(1, Ordering::SeqCst));
+        self.pollset.registry().register(&mut socket, token, interests)?;
 
         // Index the socket and resize event buffer
-        self.sockets.insert(raw_fd, sockets);
-        self.by_address.insert(address, raw_fd);
+        self.sockets.insert(token, socket);
+        self.by_address.insert(address, token);
         if self.sockets.len() > self.events.capacity() {
             // Ensure we can store events for each socket; allocate by doubling
             self.events = Events::with_capacity(self.sockets.len() * 2);
         }
 
         // Lookup socket to get a reference that is tied to `self`
-        let socket = self.sockets.get(&raw_fd).expect("failed to get newly registered socket");
+        let socket = self.sockets.get(&token).expect("failed to get newly registered socket");
         Ok(socket)
     }
 
     /// Gets a socket by its event token
     pub fn by_token(&self, token: &Token) -> Option<&UdpSocket> {
-        let fd = RawFd::try_from(token.0).ok()?;
-        self.sockets.get(&fd)
+        self.sockets.get(token)
     }
     /// Gets a socket by its associated local address
     pub fn by_address(&self, address: &SocketAddr) -> Option<&UdpSocket> {
-        let fd = self.by_address.get(address)?;
-        self.sockets.get(fd)
+        let token = self.by_address.get(address)?;
+        self.sockets.get(token)
     }
 
     /// Gets all local (aka potential outbound) addresses that are currently available within the pool
