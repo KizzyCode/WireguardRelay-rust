@@ -1,0 +1,11 @@
+services:
+  wgproxy:
+    build: .
+    ports:
+      - "51820-52000:51820-52000/udp"
+    environment:
+      - WGPROXY_SERVER="my-wireguard-server.invalid:51820"
+      - WGPROXY_PUBKEYS="<a csv list of the base64 server public keys>"
+      - WGPROXY_PORTS="51820-52000"
+      - WGPROXY_TIMEOUT="120"
+      - WGPROXY_LOGLEVEL="2"

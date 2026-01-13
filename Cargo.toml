@@ -1,0 +1,39 @@
+[package]
+name = "wgproxy"
+version = "0.1.0"
+edition = "2024"
+authors = ["KizzyCode Software Labs./Keziah Biermann <development@kizzycode.de>"]
+keywords = []
+categories = []
+description = "A tiny layer-4-proxy to bridge WireGuard®-like traffic via a jump-host"
+license = "BSD-2-Clause OR MIT"
+repository = "https://github.com/KizzyCode/WireguardRelay-rust"
+readme = "README.md"
+
+
+[[bin]]
+name = "wg-proxy"
+path = "src/main.rs"
+
+
+[badges]
+appveyor = { repository = "KizzyCode/WireguardRelay-rust" }
+
+
+[features]
+default = []
+
+[dependencies]
+base64ct = { version = "1.8.3", default-features = false, features = ["std"] }
+blake2 = { version = "0.10.6", default-features = false, features = ["std"] }
+mio = { version = "1.1.1", default-features = false, features = ["net", "os-poll"] }
+
+[dev-dependencies]
+hex-literal = { version = "1.1.0", default-features = false }
+
+
+[profile.release]
+overflow-checks = true
+
+[profile.bench]
+overflow-checks = true
