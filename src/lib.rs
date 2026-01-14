@@ -21,7 +21,7 @@ mod validator;
 use crate::config::Config;
 use crate::error::Error;
 use crate::session::{Route, SessionPool};
-use crate::socket::SocketPool;
+use crate::socket::{SocketAddrExt, SocketPool};
 use crate::validator::HandshakeValidator;
 use mio::Interest;
 use std::cell::Cell;
@@ -73,9 +73,6 @@ pub fn eventloop(config: Config) -> Result<Infallible, Error> {
             // Get the associated socket for the current event
             // Note: This should never fail as the sockets are static and the events should always match
             let socket = socketpool.by_token(&event.token()).expect("failed to get socket for event token");
-            // TODO: Cache local address by using a custom socket wrapper type?
-            // Note: This should never fail as all sockets are bound and have a local address
-            let local_address = socket.local_addr().expect("failed to get local socket address");
 
             // Fully drain the socket so it can be polled again
             // Note: This is necessary as otherwise the socket will be considered waiting even if it has pending I/O, as
@@ -90,8 +87,8 @@ pub fn eventloop(config: Config) -> Result<Infallible, Error> {
                     continue 'process_events;
                 };
 
-                // Define the route ans if the session exists already
-                let inbound_route = Route::new(local_address, source_address);
+                // Define the route if the session exists already
+                let inbound_route = Route::new(socket.address(), source_address.to_canonicalized_ipv6());
                 let session = if let Some(existing_session) = sessionpool.by_route(&inbound_route) {
                     // Reuse the existing session
                     existing_session
@@ -112,7 +109,7 @@ pub fn eventloop(config: Config) -> Result<Infallible, Error> {
                     };
 
                     // Create a new session
-                    let outbound_route = Route::new(*new_address, config.WGPROXY_SERVER);
+                    let outbound_route = Route::new(*new_address, config.WGPROXY_SERVER.to_canonicalized_ipv6());
                     sessionpool.init(inbound_route, outbound_route)
                 };
 

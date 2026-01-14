@@ -5,7 +5,7 @@ use crate::socket::SocketPool;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display, Formatter};
-use std::net::SocketAddr;
+use std::net::SocketAddrV6;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -13,13 +13,13 @@ use std::time::Instant;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Route {
     /// The local address
-    local: SocketAddr,
+    local: SocketAddrV6,
     /// The remote peer address
-    remote: SocketAddr,
+    remote: SocketAddrV6,
 }
 impl Route {
     /// Creates a new route from the given addresses
-    pub const fn new(local: SocketAddr, remote: SocketAddr) -> Self {
+    pub const fn new(local: SocketAddrV6, remote: SocketAddrV6) -> Self {
         Self { local, remote }
     }
 }
@@ -63,7 +63,7 @@ impl Session {
         // Get the associated outbound socket from the socket pool and forward the packet
         // Note: This should never happen as we should never have routes that don't map to an outbound session
         let socket = socketpool.by_address(&destination.local).expect("failed to get outbound socket for session");
-        socket.send_to(packet, destination.remote)?;
+        socket.send_to(packet, destination.remote.into())?;
 
         // Update the atime on success
         self.atime.set(Instant::now());
@@ -111,7 +111,7 @@ impl SessionPool {
     }
 
     /// Gets all local (aka potential outbound) addresses that are currently in use within the pool
-    pub fn addresses(&self) -> HashSet<SocketAddr> {
+    pub fn addresses(&self) -> HashSet<SocketAddrV6> {
         // Collect all local addresses for all registered sessions
         self.sessions.values().flat_map(|session| [session.route0.local, session.route1.local]).collect()
     }
