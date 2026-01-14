@@ -29,3 +29,8 @@ export WGPROXY_LOGLEVEL="2"
 # Start the proxy
 wgproxy
 ```
+
+## Microsoft  Windows Support
+Microsoft Windows is **not** an officially supported target, and is not tested. While the application should compile,
+networking under Windows works differently, and the integration test pipelines **did not pass**. Do not expect the
+application to work reliably on Windows.
