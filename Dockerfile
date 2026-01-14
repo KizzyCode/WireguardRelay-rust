@@ -25,10 +25,9 @@ RUN apt-get update \
     && apt-get upgrade --yes \
     && apt-get clean
 
-
 COPY --from=buildenv --chown=root:root /home/rust/.cargo/bin/wgproxy /usr/bin/
 
 RUN useradd --system --shell=/usr/sbin/nologin --uid=10000 wgproxy
-
 USER wgproxy
+
 CMD ["/usr/bin/wgproxy"]
