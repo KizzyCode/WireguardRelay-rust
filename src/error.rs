@@ -64,11 +64,12 @@ impl Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         // Print the error
-        writeln!(f, "{}", self.error)?;
+        write!(f, "{}", self.error)?;
 
         // Print the source
         if let Some(source) = &self.source {
-            writeln!(f, " caused by: {source}")?;
+            writeln!(f)?;
+            write!(f, " caused by: {source}")?;
         }
         Ok(())
     }
