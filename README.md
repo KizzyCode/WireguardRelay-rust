@@ -19,18 +19,19 @@ turn is used to forward/bridge packets between the client and the server.
 
 ## Example
 ```sh
-# Export the necessary
+# Export the necessary environment variables
 export WGPROXY_SERVER="my-wireguard-server.invalid:51820"
-export WGPROXY_PUBKEYS="<a csv list of the base64 server public keys>"
-export WGPROXY_PORTS="51820-52000"
-export WGPROXY_TIMEOUT="120"
+export WGPROXY_PUBKEY="<the base64 server public key>"
+
+# Configure optional environment variables
+export WGPROXY_LISTEN="[::]:51820"
+export WGPROXY_TIMEOUT="60"
 export WGPROXY_LOGLEVEL="2"
 
 # Start the proxy
 wgproxy
 ```
 
-## Microsoft  Windows Support
-Microsoft Windows is **not** an officially supported target, and is not tested. While the application should compile,
-networking under Windows works differently, and the integration test pipelines **did not pass**. Do not expect the
-application to work reliably on Windows.
+## Microsoft Windows Support
+Microsoft Windows is **not** an officially supported target, and is not tested. While the application should compile and
+might work as expected, Windows networking has subtle differences and might cause weird errors.
