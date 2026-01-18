@@ -7,7 +7,6 @@ use std::borrow::Cow;
 use std::env::{self, VarError};
 use std::fmt::{self, Display, Formatter};
 use std::net::{SocketAddr, ToSocketAddrs};
-use std::ops::RangeInclusive;
 use std::time::Duration;
 
 /// The server config
@@ -18,23 +17,19 @@ pub struct Config {
     ///
     /// # Example
     /// An `address:port` combination
-    pub WGPROXY_SERVER: SocketAddr,
-    /// The public keys for handshake validation
+    pub WGPROXY_SERVER: String,
+    /// The server public key for handshake validation
     ///
     /// # Note
-    /// The public keys are used for handshake verfication and quick rejection when a new proxy connection is created.
+    /// The public key is used for handshake verfication and quick rejection when a new proxy connection is created.
     /// This is a security feature to ensure that the relay will not forward arbitrary rogue packets.
-    /// **If the handshake does not match one of the configured public keys, the packet will be dropped.**
-    pub WGPROXY_PUBKEYS: Vec<[u8; 32]>,
-    /// The UDP ports to listen on and to use for relaying
-    ///
-    /// # Note
-    /// As the ports are required to uniquely identify an upstream session, this is also the upper boundary for
-    /// simultaneous proxy connections.
+    /// **If the handshake does not match the configured public key, the packet will be dropped.**
+    pub WGPROXY_PUBKEY: [u8; 32],
+    /// The address to listen on and to use for relaying
     ///
     /// # Example
-    /// An inclusive range of ports, defaults to [`Self::WGPROXY_PORTS_DEFAULT`]
-    pub WGPROXY_PORTS: RangeInclusive<u16>,
+    /// An inclusive range of ports, defaults to [`Self::WGPROXY_LISTEN_DEFAULT`]
+    pub WGPROXY_LISTEN: SocketAddr,
     /// The timeout duration for NAT mappings to expire
     ///
     /// # Example
@@ -54,8 +49,8 @@ pub struct Config {
     pub WGPROXY_LOGLEVEL: u8,
 }
 impl Config {
-    /// The default port range if [`Self::WGPROXY_PORTS`] is not specified
-    pub const WGPROXY_PORTS_DEFAULT: &str = "51820-51829";
+    /// The default listening address if [`Self::WGPROXY_LISTEN`] is not specified
+    pub const WGPROXY_LISTEN_DEFAULT: &str = "[::]:51820";
     /// The default timeout in seconds if [`Self::WGPROXY_TIMEOUT`] is not specified
     pub const WGPROXY_TIMEOUT_DEFAULT: &str = "60";
     /// The default loglevel if [`Self::WGPROXY_LOGLEVEL`] is not specified
@@ -65,40 +60,43 @@ impl Config {
     pub fn from_env() -> Result<Self, Error> {
         Ok(Config {
             WGPROXY_SERVER: Self::wgproxy_server()?,
-            WGPROXY_PUBKEYS: Self::wgproxy_pubkeys()?,
-            WGPROXY_PORTS: Self::wgproxy_ports()?,
+            WGPROXY_PUBKEY: Self::wgproxy_pubkey()?,
+            WGPROXY_LISTEN: Self::wgproxy_listen()?,
             WGPROXY_TIMEOUT: Self::wgproxy_timeout()?,
             WGPROXY_LOGLEVEL: Self::wgproxy_loglevel()?,
         })
     }
 
     /// Parses the `WGPROXY_SERVER` environment variable
-    fn wgproxy_server() -> Result<SocketAddr, Error> {
+    fn wgproxy_server() -> Result<String, Error> {
         let address = Self::env("WGPROXY_SERVER", "<unspecified>")?;
-        let mut addresses = address.to_socket_addrs()?;
-        addresses.next().ok_or(error!(r#"Failed to parse address {address}"#))
+        let Some(_) = address.to_socket_addrs()?.next() else {
+            // The address cannot be resolved; fail fast
+            return Err(error!(r#"Failed to resolve server address {address}"#));
+        };
+
+        // Retain the address as string so we can periodically re-resolve DNS names for to catch e.g. dynDNS or load
+        //  balancing
+        Ok(address.to_string())
     }
 
-    /// Parses the `WGPROXY_PUBKEYS` environment variable
-    fn wgproxy_pubkeys() -> Result<Vec<[u8; 32]>, Error> {
-        /// Parses a base64 encoded pubkey to its binary representation
-        fn base64_to_bin(base64: &str) -> Result<[u8; 32], Error> {
-            (Base64::decode_vec(base64).ok())
-                .and_then(|binary| <[u8; 32]>::try_from(binary).ok())
-                .ok_or(error!(r#"Failed to parse base64 public key "{base64}""#))
-        }
+    /// Parses the `WGPROXY_PUBKEY` environment variable
+    fn wgproxy_pubkey() -> Result<[u8; 32], Error> {
+        // Decode pubkey
+        let pubkey = Self::env("WGPROXY_PUBKEY", "<unspecified>")?;
+        let binary = Base64::decode_vec(&pubkey)
+            .map_err(|e| error!(with: e, r#"Failed to base64-decode public key "{pubkey}""#))?;
 
-        // Parse the comma-separated pubkey list
-        let pubkeys = Self::env("WGPROXY_PUBKEYS", "<unspecified>")?;
-        pubkeys.split(',').map(base64_to_bin).collect()
+        // Ensure the decoded public key is exactly 32 bytes
+        let maybe_binary = <[u8; 32]>::try_from(binary).ok();
+        maybe_binary.ok_or(error!(r#"Invalid public key "{pubkey}""#))
     }
 
-    /// Parses the `WGPROXY_PORTS` environment variable, or falls back to [`Self::WGPROXY_PORTS_DEFAULT`]
-    fn wgproxy_ports() -> Result<RangeInclusive<u16>, Error> {
-        let ports = Self::env("WGPROXY_PORTS", Self::WGPROXY_PORTS_DEFAULT)?;
-        let (lower, upper) = ports.split_once('-').ok_or(error!(r#"Invalid port range "{ports}""#))?;
-        let (lower, upper) = (lower.parse()?, upper.parse()?);
-        Ok(lower..=upper)
+    /// Parses the `WGPROXY_LISTEN` environment variable, or falls back to [`Self::WGPROXY_LISTEN_DEFAULT`]
+    fn wgproxy_listen() -> Result<SocketAddr, Error> {
+        let address = Self::env("WGPROXY_LISTEN", Self::WGPROXY_LISTEN_DEFAULT)?;
+        let maybe_address: Result<SocketAddr, _> = address.parse();
+        maybe_address.map_err(|e| error!(with: e, r#"Invalid listening address "{address}""#))
     }
 
     /// Parses the `WGPROXY_TIMEOUT` environment variable, or falls back to [`Self::WGPROXY_TIMEOUT_DEFAULT`]
@@ -125,14 +123,14 @@ impl Config {
 }
 impl Display for Config {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        // Re-encode the public keys to display them
-        let pubkeys: Vec<_> = self.WGPROXY_PUBKEYS.iter().map(|pubkey| Base64::encode_string(pubkey)).collect();
+        // Re-encode the public key to display them
+        let pubkey = Base64::encode_string(&self.WGPROXY_PUBKEY);
 
         // Format struct
         f.debug_struct("Config")
             .field("WGPROXY_SERVER", &self.WGPROXY_SERVER)
-            .field("WGPROXY_PUBKEYS", &pubkeys)
-            .field("WGPROXY_PORTS", &self.WGPROXY_PORTS)
+            .field("WGPROXY_PUBKEY", &pubkey)
+            .field("WGPROXY_LISTEN", &self.WGPROXY_LISTEN)
             .field("WGPROXY_TIMEOUT", &self.WGPROXY_TIMEOUT)
             .field("WGPROXY_LOGLEVEL", &self.WGPROXY_LOGLEVEL)
             .finish()

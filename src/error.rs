@@ -135,6 +135,7 @@ impl Loggable for &Error {
         write!(sink, "{self}")?;
         if self.has_backtrace() {
             // Print the backtrace if any
+            writeln!(sink)?;
             write!(sink, "{}", self.backtrace)?;
         };
         Ok(())

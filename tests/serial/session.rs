@@ -2,18 +2,17 @@
 
 use crate::utils;
 use std::net::{SocketAddr, UdpSocket};
-use std::time::Duration;
-use std::{array, thread};
+use std::thread;
 use wgproxy::config::Config;
 
-/// Simple routing for a single `client->server->client` session
-pub fn simple_routing(server: &UdpSocket, wgproxy: &SocketAddr, config: &Config) {
+/// Tests that a trivial handshake and subsequent session works
+pub fn handshake(server: &UdpSocket, wgproxy: &SocketAddr, config: &Config) {
     // Setup client
     let client = UdpSocket::bind("127.0.0.1:0").expect("failed to create client socket");
-    let handshake = utils::handshake(&config.WGPROXY_PUBKEYS[0], 0);
+    let handshake = utils::handshake(&config.WGPROXY_PUBKEY, 0);
     let mut buf = [0; 512];
 
-    // Send packet to the server
+    // Do handshake
     client.send_to(&handshake, wgproxy).expect("failed to send test packet");
     let (buf_len, relay_nat_address) = server.recv_from(&mut buf).expect("failed to receive test packet");
     assert_eq!(&buf[..buf_len], handshake);
@@ -24,68 +23,54 @@ pub fn simple_routing(server: &UdpSocket, wgproxy: &SocketAddr, config: &Config)
     assert_eq!(&buf[..buf_len], b"TESTOLOPE");
 }
 
-/// Interleaved routing for multiple simultaneous `client->server->client` sessions
-pub fn interleaved_routing(server: &UdpSocket, wgproxy: &SocketAddr, config: &Config) {
-    // Create client sockets
-    let clients: [_; 63] = array::from_fn(|_| UdpSocket::bind("127.0.0.1:0").expect("failed to create client socket"));
-
-    // Boot relay and use a scope to ensure real parallelism for reliability
-    thread::scope(|scope| {
-        // Send packets
-        scope.spawn(|| {
-            thread::sleep(Duration::from_secs(3));
-            for (index, client) in clients.iter().enumerate() {
-                // Create and send valid handshakes
-                let handshake = utils::handshake(&config.WGPROXY_PUBKEYS[0], index as u16);
-                client.send_to(&handshake, wgproxy).expect("failed to send test packet");
-            }
-        });
-
-        // Reflect packets
-        scope.spawn(|| {
-            let mut buf = [0; 512];
-            for _ in 0..clients.len() {
-                // Receive handshake packet
-                let (buf_len, relay_nat_address) = server.recv_from(&mut buf).expect("failed to receive test packet");
-                assert_eq!(buf_len, 148, "invalid handshake message");
-
-                // Reflect only payload from packet to have a different message
-                server.send_to(&buf[4..116], relay_nat_address).expect("failed to send test reply");
-            }
-        });
-
-        // Expect reflected responses
-        let mut buf = [0; 512];
-        for (index, client) in clients.iter().enumerate() {
-            // Compute expected message from handshake payload
-            let handshake = utils::handshake(&config.WGPROXY_PUBKEYS[0], index as u16);
-            let expected = &handshake[4..116];
-
-            // Receive and validate packet
-            let (buf_len, _) = client.recv_from(&mut buf).expect("failed to send test packet");
-            assert_eq!(&buf[..buf_len], expected);
-        }
-    });
-}
-
-/// Session timeout for a single `client->server->timeout|client->server->client` session
-pub fn timeout(server: &UdpSocket, wgproxy: &SocketAddr, config: &Config) {
+/// Tests that multiple handshakes reset the session accordingly
+pub fn handshake2(server: &UdpSocket, wgproxy: &SocketAddr, config: &Config) {
     // Setup client
-    let client = UdpSocket::bind("127.0.0.1:0").expect("failed to create client socket");
-    let handshake0 = utils::handshake(&config.WGPROXY_PUBKEYS[0], 0);
-    let handshake1 = utils::handshake(&config.WGPROXY_PUBKEYS[0], 1);
+    let client0 = UdpSocket::bind("127.0.0.1:0").expect("failed to create client socket");
+    let client1 = UdpSocket::bind("127.0.0.1:0").expect("failed to create client socket");
+    let handshake0 = utils::handshake(&config.WGPROXY_PUBKEY, 0);
+    let handshake1 = utils::handshake(&config.WGPROXY_PUBKEY, 1);
     let mut buf = [0; 512];
 
     // Send packet to the server
+    client0.send_to(&handshake0, wgproxy).expect("failed to send test packet");
+    let (buf_len, relay_nat_address) = server.recv_from(&mut buf).expect("failed to receive test packet");
+    assert_eq!(&buf[..buf_len], handshake0);
+
+    // Send a packet back to the client
+    server.send_to(b"testolope:0", relay_nat_address).expect("failed to send test reply");
+    let (buf_len, _) = client0.recv_from(&mut buf).expect("failed to receive test packet");
+    assert_eq!(&buf[..buf_len], b"testolope:0");
+
+    // Do another handshake
+    client1.send_to(&handshake1, wgproxy).expect("failed to send test packet");
+    let (buf_len, relay_nat_address) = server.recv_from(&mut buf).expect("failed to receive test packet");
+    assert_eq!(&buf[..buf_len], handshake1);
+
+    // Send second packet back to the client and ensure that it arrives on the new address
+    server.send_to(b"testolope:1", relay_nat_address).expect("failed to send test reply");
+    let (buf_len, _) = client1.recv_from(&mut buf).expect("failed to receive test packet");
+    assert_eq!(&buf[..buf_len], b"testolope:1");
+}
+
+/// Tests that session timeouts are handled gracefully
+pub fn timeout(server: &UdpSocket, wgproxy: &SocketAddr, config: &Config) {
+    // Setup client
+    let client = UdpSocket::bind("127.0.0.1:0").expect("failed to create client socket");
+    let handshake0 = utils::handshake(&config.WGPROXY_PUBKEY, 0);
+    let handshake1 = utils::handshake(&config.WGPROXY_PUBKEY, 1);
+    let mut buf = [0; 512];
+
+    // Do handshake
     client.send_to(&handshake0, wgproxy).expect("failed to send test packet");
     let (buf_len, relay_nat_address) = server.recv_from(&mut buf).expect("failed to receive test packet");
     assert_eq!(&buf[..buf_len], handshake0);
 
     // Let the connection timeout, then send a packet back
-    thread::sleep((config.WGPROXY_TIMEOUT * 2) + (wgproxy::POLL_TIMEOUT * 2));
+    thread::sleep(config.WGPROXY_TIMEOUT * 2);
     server.send_to(b"testolope:0", relay_nat_address).expect("failed to send test reply");
 
-    // Send another packet to the server
+    // Do another handshake
     client.send_to(&handshake1, wgproxy).expect("failed to send test packet");
     let (buf_len, relay_nat_address) = server.recv_from(&mut buf).expect("failed to receive test packet");
     assert_eq!(&buf[..buf_len], handshake1);
@@ -94,4 +79,32 @@ pub fn timeout(server: &UdpSocket, wgproxy: &SocketAddr, config: &Config) {
     server.send_to(b"testolope:1", relay_nat_address).expect("failed to send test reply");
     let (buf_len, _) = client.recv_from(&mut buf).expect("failed to receive test packet");
     assert_eq!(&buf[..buf_len], b"testolope:1");
+}
+
+/// Tests that a trivial handshake and subsequent session works with a bunch of messages
+pub fn batch(server: &UdpSocket, wgproxy: &SocketAddr, config: &Config) {
+    // Setup client
+    let client = UdpSocket::bind("127.0.0.1:0").expect("failed to create client socket");
+    let handshake = utils::handshake(&config.WGPROXY_PUBKEY, 0);
+    let mut buf = [0; 512];
+
+    // Do handshake
+    client.send_to(&handshake, wgproxy).expect("failed to send test packet");
+    let (buf_len, relay_nat_address) = server.recv_from(&mut buf).expect("failed to receive test packet");
+    assert_eq!(&buf[..buf_len], handshake);
+
+    // Send a lot of messages
+    for index in 0usize..65536 {
+        // Send packet to the server
+        let message = index.to_ne_bytes();
+        client.send_to(&message, relay_nat_address).expect("failed to send test reply");
+        let (buf_len, _) = server.recv_from(&mut buf).expect("failed to receive test packet");
+        assert_eq!(&buf[..buf_len], &message);
+
+        // Send packet back to the client
+        let message = (!index).to_ne_bytes();
+        server.send_to(&message, relay_nat_address).expect("failed to send test reply");
+        let (buf_len, _) = client.recv_from(&mut buf).expect("failed to receive test packet");
+        assert_eq!(&buf[..buf_len], &message);
+    }
 }
