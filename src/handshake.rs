@@ -18,18 +18,18 @@ use std::ops::Range;
 ///
 /// See <https://www.wireguard.com/protocol/> for more information.
 #[derive(Debug)]
-pub struct HandshakeValidator {
-    /// The allowed public keys for handshakes
-    public_keys: Vec<[u8; 32]>,
+pub struct Handshake {
+    /// The allowed public key for handshakes
+    public_key: [u8; 32],
 }
-impl HandshakeValidator {
+impl Handshake {
     /// Creates a new handshake validator
-    pub fn new(public_keys: &[[u8; 32]]) -> Self {
-        Self { public_keys: public_keys.to_vec() }
+    pub const fn new(public_key: [u8; 32]) -> Self {
+        Self { public_key }
     }
 
     /// Validates if a packet is a valid handshake initiation packet
-    pub fn validate(&self, packet: &[u8]) -> Result<(), Error> {
+    pub fn is_valid_handshake(&self, packet: &[u8]) -> Result<(), Error> {
         /// The exact length of a handshake initiation packet
         const PACKET_LENGTH: usize = 148;
         /// The offset/range of the message type field
@@ -53,21 +53,18 @@ impl HandshakeValidator {
             return Err(error!("Packet is not a handshake initiation packet"));
         };
 
-        // Validate MAC1 for all well-known public keys
-        for public_key in self.public_keys.iter() {
-            // Compute MAC1 over the packet
-            let label_pubkey_hash = Blake2s256::new().chain_update(MAC1_LABEL).chain_update(public_key).finalize();
-            let mac1 = Blake2sMac::<U16>::new(&label_pubkey_hash).chain_update(&packet[PAYLOAD_RANGE]);
+        // Compute MAC1 over the packet
+        let label_pubkey_hash = Blake2s256::new().chain_update(MAC1_LABEL).chain_update(self.public_key).finalize();
+        let mac1 = Blake2sMac::<U16>::new(&label_pubkey_hash).chain_update(&packet[PAYLOAD_RANGE]);
 
-            // See if the computed MAC1 matches the packet MAC1
-            let packet_mac1 = GenericArray::from_slice(&packet[MAC1_RANGE]);
-            let Err(_) = mac1.verify(packet_mac1) else {
-                // MAC1 matches our public key
-                return Ok(());
-            };
-        }
+        // See if the computed MAC1 matches the packet MAC1
+        let packet_mac1 = GenericArray::from_slice(&packet[MAC1_RANGE]);
+        let Err(_) = mac1.verify(packet_mac1) else {
+            // MAC1 matches our public key
+            return Ok(());
+        };
 
-        // MAC1 validation failed for all well-known public keys
-        Err(error!("MAC1 does not match the well-known public keys"))
+        // MAC1 validation failed for our public key
+        Err(error!("MAC1 does not match the server public key"))
     }
 }
