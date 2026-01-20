@@ -39,14 +39,14 @@ validating the [handshake first message][1]. If the relay is public, this means 
 abused by rogue senders.
 
 To prevent rogue packets from creating a new route, two criteria must be fulfilled:
-1. Packets must either origin from an already well-known source/route, **or**
-2. Packets must be a valid handshake first message for the configured server public key.
+1. If a session exists, packets must originate from this current session, **or**
+2. If no session exists, the packet must be a valid handshake first message for the configured server public key.
 
-If these criteria are not fulfilled, the packet is dropped. If the packet is a valid handshake first message, a new
-client-route will be registered to supersede the current route.
+If these criteria are not fulfilled, the packet is dropped. If no current session exists **and** the packet is a valid
+handshake first message, and a new session with a new client-route will be registered.
 
 **This means that the main security model depends on an attacker not knowing the server public key.**
-If an attacker knows the server public key, or has captured a valid handshake packet to replay, it can use that to
+If an attacker knows the server public key, or has captured a valid handshake packet to replay, they can use that to
 create new routes or hijack existing routes, rendering the relay unstable.
 
 As WireGuard traffic is fully encrypted, it is not possible to perform a full traffic validation without decrypting the

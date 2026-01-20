@@ -38,7 +38,7 @@ pub fn eventloop(config: Config) -> Result<Infallible, Error> {
 
     // Setup relay state
     let socket = UdpSocket::bind(config.WGPROXY_LISTEN)?;
-    let validator = Handshake::new(config.WGPROXY_PUBKEY);
+    let mut validator = Handshake::new(config.WGPROXY_PUBKEY);
     let mut session: Option<Session> = None;
 
     // Start network loop
@@ -58,17 +58,10 @@ pub fn eventloop(config: Config) -> Result<Infallible, Error> {
             session = None;
         }
 
-        // Always start a new session if a packet is a handshake packet
-        // TODO: Evaluate sticky sessions instead, where an existing live route takes precedence over a random handshake
-        //  to make it more difficult for a rogue packet to "steal" and disrupt a valid route. This would result in a
-        //  first-come-first-claim situation, with the advantage that a valid client can keep the session claimed
-        //  forever, whereas an attacker would need to reclaim the session after every timeout. That's not perfect, but
-        //  would shift the balance towards legitimate clients as they only need to "win" once to get a valid session.
-        // TODO: Evaluate if it makes sense to combine sticky sessions with handshake blacklists to make it more
-        //  difficult for an attacker to replay handshakes. Unless an attacker knows the server public key, or has
-        //  captured a large number of different handshakes, this could quickly exhaust such an attempt. Does it make
-        //  sense to assume that there are attackers who can capture handshakes, but only at a very small scale?
-        if let Ok(_) = log!(debug: validator.is_valid_handshake(packet)) {
+        // Start a new session if there is no current session and the packet is a handshake packet
+        if session.is_none()
+            && let Ok(_) = log!(debug: validator.is_valid_handshake(packet))
+        {
             // If we cannot create a new session, this is probably fatal
             let session_ = Session::new(&source_addr, &config, &socket)?;
             session = Some(session_);
