@@ -32,6 +32,30 @@ export WGPROXY_LOGLEVEL="2"
 wgproxy
 ```
 
+
+## Security Model
+`wgproxy` is an simple NAT, meaning that it does not decrypt the traffic or performs deep packet inspection beyond
+validating the [handshake first message][1]. If the relay is public, this means that it is potentially susceptible to be
+abused by rogue senders.
+
+To prevent rogue packets from creating a new route, two criteria must be fulfilled:
+1. Packets must either origin from an already well-known source/route, **or**
+2. Packets must be a valid handshake first message for the configured server public key.
+
+If these criteria are not fulfilled, the packet is dropped. If the packet is a valid handshake first message, a new
+client-route will be registered to supersede the current route.
+
+**This means that the main security model depends on an attacker not knowing the server public key.**
+If an attacker knows the server public key, or has captured a valid handshake packet to replay, it can use that to
+create new routes or hijack existing routes, rendering the relay unstable.
+
+As WireGuard traffic is fully encrypted, it is not possible to perform a full traffic validation without decrypting the
+traffic on the relay. This security model is a best-effort approach to limit the impact of rogue packets _without_ the
+need to escrow private keys and decrypt private traffic in transit.
+
+[1]: https://www.wireguard.com/protocol/#first-message-initiator-to-responder
+
+
 ## Microsoft Windows Support
 Microsoft Windows is **not** an officially supported target, and is not tested. While the application should compile and
 might work as expected, Windows networking has subtle differences and might cause weird errors.
