@@ -18,6 +18,7 @@ turn is used to forward/bridge packets between the client and the server.
 
 
 ## Example
+The binary can be started directly via e.g.:
 ```sh
 # Export the necessary environment variables
 export WGPROXY_SERVER="my-wireguard-server.invalid:51820"
@@ -30,6 +31,26 @@ export WGPROXY_LOGLEVEL="2"
 
 # Start the proxy
 wgproxy
+```
+
+Alternatively, the application is dockerized as a distro-less container and can be run via e.g. `docker compose`:
+```yaml
+services:
+  wgproxy:
+    build: .
+    init: true
+    ports:
+      - "51820-52000:51820-52000/udp"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - WGPROXY_SERVER=keziah.de:51820
+      - WGPROXY_PUBKEY=wycK9qzsfU+/DHJteXNrFO5XnFFj2awnIFdFi8IXmhY=
+      - WGPROXY_LISTEN=0.0.0.0:51820
+      - WGPROXY_TIMEOUT=120
+      - WGPROXY_LOGLEVEL=2
 ```
 
 

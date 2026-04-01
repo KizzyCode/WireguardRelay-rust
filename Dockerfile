@@ -1,7 +1,7 @@
 # Build the daemon
 FROM debian:stable-slim AS buildenv
 
-ENV APT_PACKAGES build-essential ca-certificates curl git
+ENV APT_PACKAGES build-essential ca-certificates curl
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update \
     && apt-get upgrade --yes \
@@ -13,21 +13,15 @@ WORKDIR /home/rust/
 
 RUN curl --tlsv1.3 --output rustup.sh https://sh.rustup.rs \
     && sh rustup.sh -y --profile minimal
-COPY --chown=rust:rust ./ ws2812b.cgi/
-RUN .cargo/bin/cargo install wgproxy
+RUN .cargo/bin/rustup target add `uname -m`-unknown-linux-musl
+
+COPY --chown=rust:rust ./ app/
+RUN .cargo/bin/cargo install --target=`uname -m`-unknown-linux-musl --path=app --bin=wgproxy
 
 
-# Build the real container
-FROM debian:stable-slim
+# Minimal environment to run the static application
+FROM scratch
+COPY --from=buildenv /home/rust/.cargo/bin/wgproxy /
 
-ENV DEBIAN_FRONTEND noninteractive
-RUN apt-get update \
-    && apt-get upgrade --yes \
-    && apt-get clean
-
-COPY --from=buildenv --chown=root:root /home/rust/.cargo/bin/wgproxy /usr/bin/
-
-RUN useradd --system --shell=/usr/sbin/nologin --uid=10000 wgproxy
-USER wgproxy
-
-CMD ["/usr/bin/wgproxy"]
+USER 10000:10000
+ENTRYPOINT [ "/wgproxy" ]
