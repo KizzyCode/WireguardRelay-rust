@@ -28,7 +28,7 @@ pub struct Config {
     /// The address to listen on and to use for relaying
     ///
     /// # Example
-    /// An inclusive range of ports, defaults to [`Self::WGPROXY_LISTEN_DEFAULT`]
+    /// A local address to listen on, defaults to [`Self::WGPROXY_LISTEN_DEFAULT`]
     pub WGPROXY_LISTEN: SocketAddr,
     /// The timeout duration for NAT mappings to expire
     ///
@@ -70,9 +70,11 @@ impl Config {
     /// Parses the `WGPROXY_SERVER` environment variable
     fn wgproxy_server() -> Result<String, Error> {
         let address = Self::env("WGPROXY_SERVER", "<unspecified>")?;
-        let Some(_) = address.to_socket_addrs()?.next() else {
-            // The address cannot be resolved; fail fast
-            return Err(error!(r#"Failed to resolve server address {address}"#));
+        let mut parsed = (address.trim().to_socket_addrs())
+            .map_err(|e| error!(with: e, r#"Failed to resolve server address {address}"#))?;
+        let Some(address) = parsed.next() else {
+            // There is no address available in the given string
+            return Err(error!(r#"Failed to resolve server address {address} (no address available)"#));
         };
 
         // Retain the address as string so we can periodically re-resolve DNS names for to catch e.g. dynDNS or load
@@ -84,7 +86,7 @@ impl Config {
     fn wgproxy_pubkey() -> Result<[u8; 32], Error> {
         // Decode pubkey
         let pubkey = Self::env("WGPROXY_PUBKEY", "<unspecified>")?;
-        let binary = Base64::decode_vec(&pubkey)
+        let binary = Base64::decode_vec(pubkey.trim())
             .map_err(|e| error!(with: e, r#"Failed to base64-decode public key "{pubkey}""#))?;
 
         // Ensure the decoded public key is exactly 32 bytes
@@ -95,21 +97,21 @@ impl Config {
     /// Parses the `WGPROXY_LISTEN` environment variable, or falls back to [`Self::WGPROXY_LISTEN_DEFAULT`]
     fn wgproxy_listen() -> Result<SocketAddr, Error> {
         let address = Self::env("WGPROXY_LISTEN", Self::WGPROXY_LISTEN_DEFAULT)?;
-        let maybe_address: Result<SocketAddr, _> = address.parse();
+        let maybe_address: Result<SocketAddr, _> = address.trim().parse();
         maybe_address.map_err(|e| error!(with: e, r#"Invalid listening address "{address}""#))
     }
 
     /// Parses the `WGPROXY_TIMEOUT` environment variable, or falls back to [`Self::WGPROXY_TIMEOUT_DEFAULT`]
     fn wgproxy_timeout() -> Result<Duration, Error> {
         let seconds = Self::env("WGPROXY_TIMEOUT", Self::WGPROXY_TIMEOUT_DEFAULT)?;
-        let seconds = seconds.parse()?;
+        let seconds = seconds.trim().parse()?;
         Ok(Duration::from_secs(seconds))
     }
 
     /// Parses the `WGPROXY_LOGLEVEL` environment variable, or falls back to [`Self::WGPROXY_LOGLEVEL_DEFAULT`]
     pub fn wgproxy_loglevel() -> Result<u8, Error> {
         let loglevel = Self::env("WGPROXY_LOGLEVEL", Self::WGPROXY_LOGLEVEL_DEFAULT)?;
-        Ok(loglevel.parse()?)
+        Ok(loglevel.trim().parse()?)
     }
 
     /// Gets the environment variable with the given name or returns the default value

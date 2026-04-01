@@ -58,7 +58,8 @@ impl<'a> Session<'a> {
         // Resolve server address
         let mut server_addresses = (config.WGPROXY_SERVER.to_socket_addrs())
             .map_err(|e| error!(with: e, "Failed to resolve server address"))?;
-        let server_address = server_addresses.next().ok_or(error!("Failed to resolve server address"))?;
+        let server_address =
+            server_addresses.next().ok_or(error!("Failed to resolve server address (no address available)"))?;
 
         // Canonicalize socket addresses so we always have the same family as our listening socket
         let server_address = server_address.canonical(&config.WGPROXY_LISTEN);
