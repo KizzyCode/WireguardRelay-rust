@@ -54,7 +54,7 @@ services:
 ```
 
 
-## Timeouts and recovery
+## Timeouts and Recovery
 `WGPROXY_TIMEOUT` sets how many seconds either direction may remain silent before the relay drops a session. 
 
 This setting needs to strive a balance between two conflicting goals: it must be small enough to ensure that dead
