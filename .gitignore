@@ -6,6 +6,7 @@
 /target
 
 # Ignore some vscode files
+.devcontainer
 .vscode/*
 !.vscode/*.md
 !.vscode/launch.json

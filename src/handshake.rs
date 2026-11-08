@@ -2,13 +2,12 @@
 
 use crate::error;
 use crate::error::Error;
-use blake2::digest::Mac;
-use blake2::digest::consts::U16;
-use blake2::digest::generic_array::GenericArray;
+use blake2::digest::array::SliceExt;
+use blake2::digest::array::sizes::{U4, U16, U116, U148};
+use blake2::digest::{KeyInit, Mac};
 use blake2::{Blake2s256, Blake2sMac, Digest};
 use std::collections::{HashSet, VecDeque};
 use std::hash::{BuildHasher, Hasher};
-use std::ops::Range;
 
 /// An identity hasher for valid aka evenly distributed MAC values
 #[derive(Debug, Clone, Copy)]
@@ -69,41 +68,46 @@ impl Handshake {
     /// Validates if a packet is a valid handshake initiation packet
     pub fn is_valid_handshake(&mut self, packet: &[u8]) -> Result<(), Error> {
         /// The exact length of a handshake initiation packet
-        const PACKET_LENGTH: usize = 148;
-        /// The offset/range of the message type field
-        const MTYPE_RANGE: Range<usize> = 0..4;
+        type PacketLengthConst = U148;
+        /// The exact length of the handshake message type header
+        type MtypeLenConst = U4;
+        /// The exact length of the handshake payload
+        type PayloadLenConst = U116;
+        /// The exact length of the MAC1 field
+        type Mac1LenConst = U16;
+
         /// The expected message type for a handshake initiation packet
         const MTYPE_VALUE: &[u8] = b"\x01\x00\x00\x00";
-        /// The offset/range of the payload for MAC1 computation
-        const PAYLOAD_RANGE: Range<usize> = 0..116;
-        /// The offset/range of the MAC1 field
-        const MAC1_RANGE: Range<usize> = 116..132;
         /// The label constant for MAC1 computation
         const MAC1_LABEL: &[u8] = b"mac1----";
 
         // Validate basic structure
-        let PACKET_LENGTH = packet.len() else {
+        let Some(packet) = packet.as_hybrid_array::<PacketLengthConst>() else {
             // The packet has an invalid length
             return Err(error!("Packet is not a handshake initiation packet"));
         };
-        let MTYPE_VALUE = &packet[MTYPE_RANGE] else {
+
+        // Validate the message type constant
+        let (mtype, _) = packet.split::<MtypeLenConst>();
+        let MTYPE_VALUE = mtype.as_slice() else {
             // The packet has an invalid message type/magic number
             return Err(error!("Packet is not a handshake initiation packet"));
         };
 
         // Compute MAC1 over the packet
+        let (payload, mac1_mac2) = packet.split::<PayloadLenConst>();
         let label_pubkey_hash = Blake2s256::new().chain_update(MAC1_LABEL).chain_update(self.public_key).finalize();
-        let mac1 = Blake2sMac::<U16>::new(&label_pubkey_hash).chain_update(&packet[PAYLOAD_RANGE]);
+        let mac1 = Blake2sMac::<U16>::new(&label_pubkey_hash).chain_update(&payload);
 
         // See if the computed MAC1 matches the packet MAC1
-        let packet_mac1 = GenericArray::from_slice(&packet[MAC1_RANGE]);
-        let Ok(_) = mac1.verify(packet_mac1) else {
+        let (packet_mac1, _) = mac1_mac2.split::<Mac1LenConst>();
+        let Ok(_) = mac1.verify(&packet_mac1) else {
             // MAC1 does not match our public key
             return Err(error!("MAC1 does not match the server public key"));
         };
 
         // MAC1 is valid, so check for previous occurrences and register it
-        let packet_mac1 = <[u8; 16]>::from(*packet_mac1);
+        let packet_mac1 = packet_mac1.into();
         self.register_mac1(&packet_mac1)
     }
 

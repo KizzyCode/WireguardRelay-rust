@@ -49,9 +49,25 @@ services:
       - WGPROXY_SERVER=keziah.de:51820
       - WGPROXY_PUBKEY=wycK9qzsfU+/DHJteXNrFO5XnFFj2awnIFdFi8IXmhY=
       - WGPROXY_LISTEN=0.0.0.0:51820
-      - WGPROXY_TIMEOUT=120
+      - WGPROXY_TIMEOUT=200
       - WGPROXY_LOGLEVEL=2
 ```
+
+
+## Timeouts and recovery
+`WGPROXY_TIMEOUT` sets how many seconds either direction may remain silent before the relay drops a session. 
+
+This setting needs to strive a balance between two conflicting goals: it must be small enough to ensure that dead
+sessions expire fast enough so that clients can reconnect as soon as possible, and it must be large enough to ensure
+that regular intervals of silence don't trigger a premature timeout.
+Given how WireGuard implements keepalive, the recommended settings are:
+- `PersistentKeepalive=25` in the WireGuard configuration on both sides
+- `WGPROXY_TIMEOUT=200` to ensure we have rekeying traffic before the connection can timeout
+
+If `PersistentKeepalive` is reduced by `n` seconds, `WGPROXY_TIMEOUT` can also be safely reduced by `n` seconds as well.
+If peers change their IP address very often, it also might make sense to further reduce the `WGPROXY_TIMEOUT` interval,
+however the tradeoff herethis can cause premature connection timeouts for idle-yet-healthy WireGuard tunnels, requiring
+a subsequent timeout and reconnection on the WireGuard side itself.
 
 
 ## Security Model

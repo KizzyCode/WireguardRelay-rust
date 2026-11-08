@@ -72,14 +72,13 @@ impl Config {
         let address = Self::env("WGPROXY_SERVER", "<unspecified>")?;
         let mut parsed = (address.trim().to_socket_addrs())
             .map_err(|e| error!(with: e, r#"Failed to resolve server address {address}"#))?;
-        let Some(address) = parsed.next() else {
+        let Some(_) = parsed.next() else {
             // There is no address available in the given string
             return Err(error!(r#"Failed to resolve server address {address} (no address available)"#));
         };
 
-        // Retain the address as string so we can periodically re-resolve DNS names for to catch e.g. dynDNS or load
-        //  balancing
-        Ok(address.to_string())
+        // Retain the hostname so each new session can resolve DNS changes, e.g. dynDNS or load balancing
+        Ok(address.trim().to_owned())
     }
 
     /// Parses the `WGPROXY_PUBKEY` environment variable

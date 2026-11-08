@@ -11,6 +11,7 @@
 #![warn(clippy::missing_panics_doc)]
 #![warn(clippy::allow_attributes_without_reason)]
 #![warn(clippy::cognitive_complexity)]
+#![deny(unsafe_code)]
 
 use std::process;
 use wgproxy::config::Config;

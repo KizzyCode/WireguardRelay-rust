@@ -1,7 +1,7 @@
 //! Testing utils
 
-use blake2::digest::Mac;
 use blake2::digest::consts::U16;
+use blake2::digest::{KeyInit, Mac};
 use blake2::{Blake2s256, Blake2sMac, Digest};
 use hex_literal::hex;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};

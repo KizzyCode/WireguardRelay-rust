@@ -32,6 +32,9 @@ thread_local! {
 
 /// The packet-forwarding event loop
 pub fn eventloop(config: Config) -> Result<Infallible, Error> {
+    /// The maximum packet size
+    const MAX_PACKET_SIZE: usize = 65_535;
+
     // Set log-level from config
     LOGLEVEL.set(config.WGPROXY_LOGLEVEL);
     log!(info: &config);
@@ -42,7 +45,7 @@ pub fn eventloop(config: Config) -> Result<Infallible, Error> {
     let mut session: Option<Session> = None;
 
     // Start network loop
-    let mut buf = [0; 4096];
+    let mut buf = [0; MAX_PACKET_SIZE];
     'network_loop: loop {
         // Receive next inbound packet
         let (buf_len, source_addr) =
@@ -62,8 +65,12 @@ pub fn eventloop(config: Config) -> Result<Infallible, Error> {
         if session.is_none()
             && let Ok(_) = log!(debug: validator.is_valid_handshake(packet))
         {
-            // If we cannot create a new session, this is probably fatal
-            let session_ = Session::new(&source_addr, &config, &socket)?;
+            // DNS may fail transiently; the next handshake can retry session creation
+            let Ok(session_) = log!(warn: Session::new(&source_addr, &config, &socket)) else {
+                continue 'network_loop;
+            };
+
+            // Mark session as active
             session = Some(session_);
         }
 

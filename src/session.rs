@@ -18,7 +18,7 @@ impl SocketAddrExt for SocketAddr {
         // v6-to-v4 chain
         if target_family.is_ipv4()
             && let IpAddr::V6(address_v6) = self.ip()
-            && let Some(canonical_v4) = address_v6.to_ipv4()
+            && let Some(canonical_v4) = address_v6.to_ipv4_mapped()
         {
             // We could map the address to v4
             return SocketAddr::new(IpAddr::V4(canonical_v4), self.port());
@@ -85,15 +85,16 @@ impl<'a> Session<'a> {
             self.last_downlink = Instant::now();
             Ok(())
         } else {
-            // Cannot associate packet source
-            Err(error!("Unknown packet from {source}"))
+            // Packets from unknown sources are not an error, and only relevant at debugging level
+            crate::log!(debug: error!("Unknown packet from {source}"));
+            Ok(())
         }
     }
 
     /// The latest atime of this session
     pub fn atime(&self) -> Instant {
-        // Keep-alives should be symmetrical, so we use the **older** atime as reference – if one atime drifts beyond
-        //  the timeout threshold, something is probably wrong, even if the other atime is updated.
+        // Use the **older** atime as reference to ensure that unilateral traffic cannot keep a stale mapping alive
+        // indefinitely (e.g. if one peer changes its address while the other continues to send packets or handshakes)
         cmp::min(self.last_uplink, self.last_downlink)
     }
 }

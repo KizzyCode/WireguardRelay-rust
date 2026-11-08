@@ -2,22 +2,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "lldb",
+            "type": "lldb-dap",
             "request": "launch",
-            "name": "cargo test",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin",
-                    "--package=wgproxy"
-                ],
-                "filter": {
-                    "name": "wgproxy",
-                    "kind": "bin"
-                }
-            },
+            "name": "LLDB Debug",
+            "program": "${workspaceFolder}/target/debug/wgproxy",
+            "disableASLR": false,
+            "initCommands": ["settings set target.disable-aslr false"],
             "args": [],
+            "env": [],
             "cwd": "${workspaceFolder}"
         }
     ]

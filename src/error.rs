@@ -111,7 +111,7 @@ where
         };
 
         // Write self to `stderr`
-        let mut stderr = io::stderr();
+        let mut stderr = io::stderr().lock();
         let _ = write!(&mut stderr, "{prefix}");
         let _ = self.write(&mut stderr);
         let _ = writeln!(&mut stderr);
